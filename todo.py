@@ -3,6 +3,7 @@ import os.path
 import time
 import hashlib
 import click
+import os
 
 filepath = "E:/Todo/todo-list.json"
 
@@ -41,8 +42,8 @@ def add(t, c):
             old_data = []
         old_data.append(data)
     with open(filepath, "w", encoding="utf-8") as f:
-        json.dump(old_data, f)
-    click.echo(click.style("ok!", fg="green"))
+        json.dump(old_data, f, ensure_ascii=False)
+    click.echo(click.style("ok! generate id " + data["id"], fg="green"))
 
 
 @cli.command("del", help="删除")
@@ -57,7 +58,7 @@ def delete(ids):
         if not item["id"] in ids:
             new_data.append(item)
     with open(filepath, "w", encoding="utf-8") as f:
-        json.dump(new_data, f)
+        json.dump(new_data, f, ensure_ascii=False)
 
 
 @cli.command("ll", help="列表")
@@ -128,11 +129,16 @@ def common_print(item, field, filed_display_name, nl=False):
     click.echo(click.style(item[field] + " ", fg="white"), nl=nl)
 
 
+@cli.command("source", help="打开文件")
+def source():
+    os.startfile(filepath)
+
+
 @cli.command("edit", help="编辑")
 @click.option("--id", prompt="ID", help="要编辑的ID")
 @click.option("--title", prompt="标题", help="修改标题")
 @click.option("--content", prompt="内容", help="修改内容")
-def edit(id, title, content):
+def edit(id, title, content, file):
     with open(filepath, "r", encoding="utf-8") as f:
         old_data = json.load(f)
     new_data = []
@@ -149,7 +155,7 @@ def edit(id, title, content):
         click.echo(click.style("编辑失败，请检查ID", fg="red"))
         return
     with open(filepath, "w", encoding="utf-8") as f:
-        json.dump(new_data, f)
+        json.dump(new_data, f, ensure_ascii=False)
 
 
 @cli.command("done", help="完成一项TODO")
@@ -172,7 +178,7 @@ def update_status_by_id(id):
         click.echo(click.style("更新失败，请检查ID", fg="red"))
         return
     with open(filepath, "w", encoding="utf-8") as f:
-        json.dump(new_data, f)
+        json.dump(new_data, f, ensure_ascii=False)
 
 
 if __name__ == '__main__':
