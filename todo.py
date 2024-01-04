@@ -131,6 +131,7 @@ def common_print(item, field, filed_display_name, nl=False):
 
 @cli.command("source", help="打开文件")
 def source():
+    print("正在打开文件，稍等哦")
     os.startfile(filepath)
 
 
