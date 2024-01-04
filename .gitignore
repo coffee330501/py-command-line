@@ -1,4 +1,4 @@
-./dist
-build
 .myrepl-history
 .idea
+/dist/
+/build/
