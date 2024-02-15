@@ -5,7 +5,11 @@ import hashlib
 import click
 import os
 
+import requests
+
 filepath = "E:/Todo/todo-list.json"
+config_path = "E:/Todo/todo-config.json"
+base_url = "http://127.0.0.1:8000"
 
 
 @click.group()
@@ -13,18 +17,37 @@ def cli():
     pass
 
 
+@cli.command("init", help="初始化")
+def init():
+    # 初始化配置文件
+    with open(config_path, "w", encoding="utf-8") as f:
+        config = {"updateTime": "2020-01-01 00:00:00"}
+        json.dump(config, f, ensure_ascii=False)
+
+    # 初始化todo文件
+    if not os.path.exists(filepath):
+        # 文件不存在则创建文件
+        file = open(filepath, "w")
+        file.write("[]")
+        file.close()
+
+
 @cli.command("add", help="添加")
 @click.option("--t", prompt="标题", help="添加标题", default="默认", type=str)
 @click.option("--c", prompt="内容", help="添加内容")
-def add(t, c):
+@click.option("--tg", prompt="标签", help="添加标签")
+def add(t, c, tg):
     # TodoList内容
     data = {
         "id": "",
         "title": t,
         "content": c,
-        "createOn": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
-        "status": "Pending"
+        "tag": tg,
+        "createTime": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
+        "status": "Pending",
+        "sync": 0
     }
+    requests.post(base_url + "/todoList/add", json=data)
     md5 = hashlib.md5()
     md5.update(str(data).encode())
     data["id"] = md5.hexdigest()
@@ -50,15 +73,14 @@ def add(t, c):
 @click.option("--ids", help="要删除的ID,按逗号分隔")
 def delete(ids):
     ids = ids.split(",")
-    print(ids)
     with open(filepath, "r", encoding="utf-8") as f:
-        old_data = json.load(f)
-    new_data = []
-    for item in old_data:
-        if not item["id"] in ids:
-            new_data.append(item)
+        data = json.load(f)
+    for item in data:
+        if item["id"] in ids:
+            item["status"] = "Deleted"
+            item["sync"] = 0
     with open(filepath, "w", encoding="utf-8") as f:
-        json.dump(new_data, f, ensure_ascii=False)
+        json.dump(data, f, ensure_ascii=False)
 
 
 @cli.command("ll", help="列表")
@@ -121,7 +143,7 @@ def print_status(item, nl=True):
 
 
 def print_create_on(item, nl=False):
-    common_print(item, "createOn", "创建时间", nl)
+    common_print(item, "createTime", "创建时间", nl)
 
 
 def common_print(item, field, filed_display_name, nl=False):
@@ -139,7 +161,7 @@ def source():
 @click.option("--id", prompt="ID", help="要编辑的ID")
 @click.option("--title", prompt="标题", help="修改标题")
 @click.option("--content", prompt="内容", help="修改内容")
-def edit(id, title, content, file):
+def edit(id, title, content):
     with open(filepath, "r", encoding="utf-8") as f:
         old_data = json.load(f)
     new_data = []
@@ -150,6 +172,7 @@ def edit(id, title, content, file):
                 item["content"] = content
             if title is not None:
                 item["content"] = content
+            item["sync"] = 0
             success = True
         new_data.append(item)
     if not success:
@@ -173,6 +196,7 @@ def update_status_by_id(id):
     for item in old_data:
         if item["id"] == id:
             item["status"] = "Closed"
+            item["sync"] = 0
             success = True
         new_data.append(item)
     if not success:
@@ -180,6 +204,77 @@ def update_status_by_id(id):
         return
     with open(filepath, "w", encoding="utf-8") as f:
         json.dump(new_data, f, ensure_ascii=False)
+
+
+# 同步云端
+def sync_server():
+    with open(filepath, "r", encoding="utf-8") as f:
+        data = json.load(f)
+        # 获取所有未同步的数据
+        unsync_data = []
+        for item in data:
+            if item["sync"] == 0:
+                unsync_data.append(item)
+        # 同步数据
+        res = requests.put(base_url + "/todoList/sync", json=unsync_data)
+        resolve_response(res)
+        # 将本地数据置为已同步
+        for item in unsync_data:
+            item["sync"] = 1
+        # 保存本地数据
+    with open(filepath, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False)
+
+
+# 同步本地
+def sync_local():
+    with open(config_path, "r", encoding="utf-8") as c:
+        config = json.load(c)
+        res = requests.get(base_url + "/todoList/client_sync_data", config)
+        res_data = resolve_response(res)
+
+        with open(filepath, 'r', encoding="utf-8") as f:
+            todos = json.load(f)
+            todo_dic = {}
+            for todo in todos:
+                todo_dic[todo["id"]] = todo
+
+            for item in res_data:
+                # 存在则更新
+                if item["id"] in todo_dic:
+                    todo_local = todo_dic[item["id"]]
+                    for key in item:
+                        todo_local[key] = item[key]
+                # 不存在则新增
+                else:
+                    todos.append({
+                        "id": item["id"],
+                        "status": item["status"],
+                        "tag": item["tag"],
+                        "title": item["title"],
+                        "content": item["content"],
+                        "createTime": item["createTime"],
+                        "sync": 1,
+                    })
+        with open(filepath, 'w', encoding="utf-8") as f:
+            json.dump(todos, f, ensure_ascii=False)
+
+
+@cli.command("sync", help="同步本地与云端")
+def sync_todo_list():
+    sync_server()
+    sync_local()
+
+
+def resolve_response(response_data):
+    if response_data.status_code == 404:
+        click.echo(click.style("请求异常：" + response_data.text, fg="red"))
+        raise RuntimeError(404)
+    data = json.loads(response_data.text)
+    if data["code"] != 200:
+        click.echo(click.style("响应异常：" + data["msg"], fg="red"))
+        raise RuntimeError(data["msg"])
+    return data["data"]
 
 
 if __name__ == '__main__':
