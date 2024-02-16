@@ -141,10 +141,16 @@ def common_print(item, field, filed_display_name, nl=False):
     click.echo(click.style(item[field] + " ", fg="white"), nl=nl)
 
 
-@cli.command("source", help="打开文件")
+@cli.command("source", help="打开Todo文件")
 def source():
     print("正在打开文件，稍等哦")
     os.startfile(todo_file_path)
+
+
+@cli.command("config", help="打开配置文件")
+def source():
+    print("正在打开文件，稍等哦")
+    os.startfile(TodoConfig.config_path)
 
 
 @cli.command("edit", help="编辑")
