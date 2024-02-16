@@ -1,15 +1,16 @@
+import hashlib
 import json
+import os
 import os.path
 import time
-import hashlib
+
 import click
-import os
 
-import requests
+from api import TodoApi
+from config import TodoConfig
 
-filepath = "E:/Todo/todo-list.json"
-config_path = "E:/Todo/todo-config.json"
-base_url = "http://127.0.0.1:8000"
+todo_file_path = TodoConfig.get_todo_file_path()
+config_path = TodoConfig.config_path
 
 
 @click.group()
@@ -19,17 +20,7 @@ def cli():
 
 @cli.command("init", help="初始化")
 def init():
-    # 初始化配置文件
-    with open(config_path, "w", encoding="utf-8") as f:
-        config = {"updateTime": "2020-01-01 00:00:00"}
-        json.dump(config, f, ensure_ascii=False)
-
-    # 初始化todo文件
-    if not os.path.exists(filepath):
-        # 文件不存在则创建文件
-        file = open(filepath, "w")
-        file.write("[]")
-        file.close()
+    TodoConfig.init()
 
 
 @cli.command("add", help="添加")
@@ -47,39 +38,38 @@ def add(t, c, tg):
         "status": "Pending",
         "sync": 0
     }
-    requests.post(base_url + "/todoList/add", json=data)
     md5 = hashlib.md5()
     md5.update(str(data).encode())
     data["id"] = md5.hexdigest()
 
     file_exists = True
-    if not os.path.exists(filepath):
+    if not os.path.exists(todo_file_path):
         # 文件不存在则创建文件
-        file = open(filepath, "w")
+        file = open(todo_file_path, "w")
         file_exists = False
         file.close()
-    with open(filepath, "r", encoding="utf-8") as f:
+    with open(todo_file_path, "r", encoding="utf-8") as f:
         if file_exists:
             old_data = json.load(f)
         else:
             old_data = []
         old_data.append(data)
-    with open(filepath, "w", encoding="utf-8") as f:
+    with open(todo_file_path, "w", encoding="utf-8") as f:
         json.dump(old_data, f, ensure_ascii=False)
     click.echo(click.style("ok! generate id " + data["id"], fg="green"))
 
 
 @cli.command("del", help="删除")
-@click.option("--ids", help="要删除的ID,按逗号分隔")
-def delete(ids):
-    ids = ids.split(",")
-    with open(filepath, "r", encoding="utf-8") as f:
+@click.option("--id", help="要删除的ID,按逗号分隔")
+def delete(id):
+    ids = id.split(",")
+    with open(todo_file_path, "r", encoding="utf-8") as f:
         data = json.load(f)
     for item in data:
         if item["id"] in ids:
             item["status"] = "Deleted"
             item["sync"] = 0
-    with open(filepath, "w", encoding="utf-8") as f:
+    with open(todo_file_path, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False)
 
 
@@ -87,7 +77,7 @@ def delete(ids):
 @click.option("--id", is_flag=True, help="显示ID")
 @click.option("--done", is_flag=True, help="显示已完成的内容")
 def ll(id, done):
-    with open(filepath, "r", encoding="utf-8") as f:
+    with open(todo_file_path, "r", encoding="utf-8") as f:
         todo_list = json.load(f)
     for item in todo_list:
         status = item["status"]
@@ -99,7 +89,7 @@ def ll(id, done):
                 continue
 
         # 正常不输出已完成的
-        if status == "Closed":
+        if status in ("Closed", "Deleted"):
             continue
         print_item(item, id)
 
@@ -107,7 +97,7 @@ def ll(id, done):
 @cli.command("detail", help="查看详情")
 @click.option("--id", help="id")
 def ll(id):
-    with open(filepath, "r", encoding="utf-8") as f:
+    with open(todo_file_path, "r", encoding="utf-8") as f:
         todo_list = json.load(f)
     for item in todo_list:
         if item["id"] == id:
@@ -154,7 +144,7 @@ def common_print(item, field, filed_display_name, nl=False):
 @cli.command("source", help="打开文件")
 def source():
     print("正在打开文件，稍等哦")
-    os.startfile(filepath)
+    os.startfile(todo_file_path)
 
 
 @cli.command("edit", help="编辑")
@@ -162,7 +152,7 @@ def source():
 @click.option("--title", prompt="标题", help="修改标题")
 @click.option("--content", prompt="内容", help="修改内容")
 def edit(id, title, content):
-    with open(filepath, "r", encoding="utf-8") as f:
+    with open(todo_file_path, "r", encoding="utf-8") as f:
         old_data = json.load(f)
     new_data = []
     success = False
@@ -178,7 +168,7 @@ def edit(id, title, content):
     if not success:
         click.echo(click.style("编辑失败，请检查ID", fg="red"))
         return
-    with open(filepath, "w", encoding="utf-8") as f:
+    with open(todo_file_path, "w", encoding="utf-8") as f:
         json.dump(new_data, f, ensure_ascii=False)
 
 
@@ -189,7 +179,7 @@ def done(id):
 
 
 def update_status_by_id(id):
-    with open(filepath, "r", encoding="utf-8") as f:
+    with open(todo_file_path, "r", encoding="utf-8") as f:
         old_data = json.load(f)
     new_data = []
     success = False
@@ -202,13 +192,13 @@ def update_status_by_id(id):
     if not success:
         click.echo(click.style("更新失败，请检查ID", fg="red"))
         return
-    with open(filepath, "w", encoding="utf-8") as f:
+    with open(todo_file_path, "w", encoding="utf-8") as f:
         json.dump(new_data, f, ensure_ascii=False)
 
 
 # 同步云端
 def sync_server():
-    with open(filepath, "r", encoding="utf-8") as f:
+    with open(todo_file_path, "r", encoding="utf-8") as f:
         data = json.load(f)
         # 获取所有未同步的数据
         unsync_data = []
@@ -216,65 +206,68 @@ def sync_server():
             if item["sync"] == 0:
                 unsync_data.append(item)
         # 同步数据
-        res = requests.put(base_url + "/todoList/sync", json=unsync_data)
-        resolve_response(res)
+        TodoApi.sync_todo(unsync_data)
         # 将本地数据置为已同步
         for item in unsync_data:
             item["sync"] = 1
         # 保存本地数据
-    with open(filepath, "w", encoding="utf-8") as f:
+    with open(todo_file_path, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False)
 
 
 # 同步本地
 def sync_local():
-    with open(config_path, "r", encoding="utf-8") as c:
-        config = json.load(c)
-        res = requests.get(base_url + "/todoList/client_sync_data", config)
-        res_data = resolve_response(res)
+    res_data = TodoApi.get_client_sync_data()
 
-        with open(filepath, 'r', encoding="utf-8") as f:
-            todos = json.load(f)
-            todo_dic = {}
-            for todo in todos:
-                todo_dic[todo["id"]] = todo
+    with open(todo_file_path, 'r', encoding="utf-8") as f:
+        todos = json.load(f)
+        todo_dic = {}
+        for todo in todos:
+            todo_dic[todo["id"]] = todo
 
-            for item in res_data:
-                # 存在则更新
-                if item["id"] in todo_dic:
-                    todo_local = todo_dic[item["id"]]
-                    for key in item:
-                        todo_local[key] = item[key]
-                # 不存在则新增
-                else:
-                    todos.append({
-                        "id": item["id"],
-                        "status": item["status"],
-                        "tag": item["tag"],
-                        "title": item["title"],
-                        "content": item["content"],
-                        "createTime": item["createTime"],
-                        "sync": 1,
-                    })
-        with open(filepath, 'w', encoding="utf-8") as f:
-            json.dump(todos, f, ensure_ascii=False)
+        for item in res_data:
+            # 存在则更新
+            if item["id"] in todo_dic:
+                todo_local = todo_dic[item["id"]]
+                for key in item:
+                    todo_local[key] = item[key]
+            # 不存在则新增
+            else:
+                todos.append({
+                    "id": item["id"],
+                    "status": item["status"],
+                    "tag": item["tag"],
+                    "title": item["title"],
+                    "content": item["content"],
+                    "createTime": item["createTime"],
+                    "sync": 1,
+                })
+
+    with open(todo_file_path, 'w', encoding="utf-8") as f:
+        json.dump(todos, f, ensure_ascii=False)
+
+
+# 删除本地已删除的Todo
+def clear_local_deleted():
+    new_list = []
+    with open(todo_file_path, 'r', encoding="utf-8") as f:
+        todo_list = json.load(f)
+        for item in todo_list:
+            if item.get("status") == "Deleted":
+                continue
+            new_list.append(item)
+
+    with open(todo_file_path, 'w', encoding="utf-8") as f:
+        json.dump(new_list, f, ensure_ascii=False)
 
 
 @cli.command("sync", help="同步本地与云端")
 def sync_todo_list():
     sync_server()
     sync_local()
-
-
-def resolve_response(response_data):
-    if response_data.status_code == 404:
-        click.echo(click.style("请求异常：" + response_data.text, fg="red"))
-        raise RuntimeError(404)
-    data = json.loads(response_data.text)
-    if data["code"] != 200:
-        click.echo(click.style("响应异常：" + data["msg"], fg="red"))
-        raise RuntimeError(data["msg"])
-    return data["data"]
+    TodoConfig.update_sync_time()
+    click.echo(click.style("sync success", fg="green"))
+    clear_local_deleted()
 
 
 if __name__ == '__main__':
